@@ -41,6 +41,7 @@ import (
 	"github.com/juju/juju/core/network"
 	"github.com/juju/juju/environs/config"
 	"github.com/juju/juju/rpc/params"
+	"github.com/juju/juju/storage"
 	jujuversion "github.com/juju/juju/version"
 	"github.com/juju/names/v5"
 	"github.com/juju/retry"
@@ -125,21 +126,22 @@ func ConfigEntryToString(input interface{}) string {
 }
 
 type CreateApplicationInput struct {
-	ApplicationName  string
-	ModelName        string
-	CharmName        string
-	CharmChannel     string
-	CharmBase        string
-	CharmSeries      string
-	CharmRevision    int
-	Units            int
-	Trust            bool
-	Expose           map[string]interface{}
-	Config           map[string]string
-	Placement        string
-	Constraints      constraints.Value
-	EndpointBindings map[string]string
-	Resources        map[string]int
+	ApplicationName        string
+	ModelName              string
+	CharmName              string
+	CharmChannel           string
+	CharmBase              string
+	CharmSeries            string
+	CharmRevision          int
+	Units                  int
+	Trust                  bool
+	Expose                 map[string]interface{}
+	Config                 map[string]string
+	Placement              string
+	Constraints            constraints.Value
+	StorageConstraintsSize uint64
+	EndpointBindings       map[string]string
+	Resources              map[string]int
 }
 
 // validateAndTransform returns transformedCreateApplicationInput which
@@ -224,23 +226,29 @@ func (input CreateApplicationInput) validateAndTransform(conn api.Connection) (p
 	}
 	parsed.endpointBindings = endpointBindings
 
+	storageConstraints := storage.Constraints{
+		Pool:  "",
+		Count: 1,
+	}
+	storageConstraints.Size = input.StorageConstraintsSize
 	return
 }
 
 type transformedCreateApplicationInput struct {
-	applicationName  string
-	charmName        string
-	charmChannel     string
-	charmBase        corebase.Base
-	charmRevision    int
-	config           map[string]string
-	constraints      constraints.Value
-	expose           map[string]interface{}
-	placement        []*instance.Placement
-	units            int
-	trust            bool
-	endpointBindings map[string]string
-	resources        map[string]int
+	applicationName    string
+	charmName          string
+	charmChannel       string
+	charmBase          corebase.Base
+	charmRevision      int
+	config             map[string]string
+	constraints        constraints.Value
+	storageConstraints storage.Constraints
+	expose             map[string]interface{}
+	placement          []*instance.Placement
+	units              int
+	trust              bool
+	endpointBindings   map[string]string
+	resources          map[string]int
 }
 
 type CreateApplicationResponse struct {
@@ -352,12 +360,15 @@ func (c applicationsClient) deployFromRepository(applicationAPIClient *apiapplic
 
 	c.Tracef("Calling DeployFromRepository")
 	_, _, errs := applicationAPIClient.DeployFromRepository(apiapplication.DeployFromRepositoryArg{
-		CharmName:        transformedInput.charmName,
-		ApplicationName:  transformedInput.applicationName,
-		Base:             &transformedInput.charmBase,
-		Channel:          &transformedInput.charmChannel,
-		ConfigYAML:       string(configYaml),
-		Cons:             transformedInput.constraints,
+		CharmName:       transformedInput.charmName,
+		ApplicationName: transformedInput.applicationName,
+		Base:            &transformedInput.charmBase,
+		Channel:         &transformedInput.charmChannel,
+		ConfigYAML:      string(configYaml),
+		Cons:            transformedInput.constraints,
+		Storage: map[string]storage.Constraints{
+			transformedInput.applicationName: transformedInput.storageConstraints,
+		},
 		EndpointBindings: transformedInput.endpointBindings,
 		NumUnits:         &transformedInput.units,
 		Placement:        transformedInput.placement,

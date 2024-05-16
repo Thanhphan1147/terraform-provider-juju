@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -76,15 +77,16 @@ type applicationResource struct {
 // applicationResourceModel describes the application data model.
 // tfsdk must match user resource schema attribute names.
 type applicationResourceModel struct {
-	ApplicationName  types.String `tfsdk:"name"`
-	Charm            types.List   `tfsdk:"charm"`
-	Config           types.Map    `tfsdk:"config"`
-	Constraints      types.String `tfsdk:"constraints"`
-	Expose           types.List   `tfsdk:"expose"`
-	ModelName        types.String `tfsdk:"model"`
-	Placement        types.String `tfsdk:"placement"`
-	EndpointBindings types.Set    `tfsdk:"endpoint_bindings"`
-	Resources        types.Map    `tfsdk:"resources"`
+	ApplicationName    types.String `tfsdk:"name"`
+	Charm              types.List   `tfsdk:"charm"`
+	Config             types.Map    `tfsdk:"config"`
+	Constraints        types.String `tfsdk:"constraints"`
+	StorageConstraints types.Map    `tfsdk:"storage_constraints"`
+	Expose             types.List   `tfsdk:"expose"`
+	ModelName          types.String `tfsdk:"model"`
+	Placement          types.String `tfsdk:"placement"`
+	EndpointBindings   types.Set    `tfsdk:"endpoint_bindings"`
+	Resources          types.Map    `tfsdk:"resources"`
 	// TODO - remove Principal when we version the schema
 	// and remove deprecated elements. Once we create upgrade
 	// functionality it can be removed from the structure.
@@ -162,6 +164,17 @@ func (r *applicationResource) Schema(_ context.Context, _ resource.SchemaRequest
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplaceIfConfigured(),
 					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"storage_constraints": schema.MapAttribute{
+				Description: "Storage constraints to deploy with the application",
+				Optional:    true,
+				// Default storage constraints is 1G for each defined juju storage
+				Computed:    true,
+				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.Map{
+					mapplanmodifier.RequiresReplaceIfConfigured(),
+					mapplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"trust": schema.BoolAttribute{
