@@ -126,22 +126,22 @@ func ConfigEntryToString(input interface{}) string {
 }
 
 type CreateApplicationInput struct {
-	ApplicationName        string
-	ModelName              string
-	CharmName              string
-	CharmChannel           string
-	CharmBase              string
-	CharmSeries            string
-	CharmRevision          int
-	Units                  int
-	Trust                  bool
-	Expose                 map[string]interface{}
-	Config                 map[string]string
-	Placement              string
-	Constraints            constraints.Value
-	StorageConstraintsSize uint64
-	EndpointBindings       map[string]string
-	Resources              map[string]int
+	ApplicationName    string
+	ModelName          string
+	CharmName          string
+	CharmChannel       string
+	CharmBase          string
+	CharmSeries        string
+	CharmRevision      int
+	Units              int
+	Trust              bool
+	Expose             map[string]interface{}
+	Config             map[string]string
+	Placement          string
+	Constraints        constraints.Value
+	StorageConstraints map[string]storage.Constraints
+	EndpointBindings   map[string]string
+	Resources          map[string]int
 }
 
 // validateAndTransform returns transformedCreateApplicationInput which
@@ -225,12 +225,8 @@ func (input CreateApplicationInput) validateAndTransform(conn api.Connection) (p
 		}
 	}
 	parsed.endpointBindings = endpointBindings
+	parsed.storageConstraints = input.StorageConstraints
 
-	storageConstraints := storage.Constraints{
-		Pool:  "",
-		Count: 1,
-	}
-	storageConstraints.Size = input.StorageConstraintsSize
 	return
 }
 
@@ -242,7 +238,7 @@ type transformedCreateApplicationInput struct {
 	charmRevision      int
 	config             map[string]string
 	constraints        constraints.Value
-	storageConstraints storage.Constraints
+	storageConstraints map[string]storage.Constraints
 	expose             map[string]interface{}
 	placement          []*instance.Placement
 	units              int
@@ -326,6 +322,8 @@ func (c applicationsClient) CreateApplication(ctx context.Context, input *Create
 		return nil, err
 	}
 
+	c.Tracef("Transformed TF input to juju API input", map[string]interface{}{"arg": transformedInput})
+
 	applicationAPIClient := apiapplication.NewClient(conn)
 	if applicationAPIClient.BestAPIVersion() >= 19 {
 		err = c.deployFromRepository(applicationAPIClient, transformedInput)
@@ -360,15 +358,13 @@ func (c applicationsClient) deployFromRepository(applicationAPIClient *apiapplic
 
 	c.Tracef("Calling DeployFromRepository")
 	_, _, errs := applicationAPIClient.DeployFromRepository(apiapplication.DeployFromRepositoryArg{
-		CharmName:       transformedInput.charmName,
-		ApplicationName: transformedInput.applicationName,
-		Base:            &transformedInput.charmBase,
-		Channel:         &transformedInput.charmChannel,
-		ConfigYAML:      string(configYaml),
-		Cons:            transformedInput.constraints,
-		Storage: map[string]storage.Constraints{
-			transformedInput.applicationName: transformedInput.storageConstraints,
-		},
+		CharmName:        transformedInput.charmName,
+		ApplicationName:  transformedInput.applicationName,
+		Base:             &transformedInput.charmBase,
+		Channel:          &transformedInput.charmChannel,
+		ConfigYAML:       string(configYaml),
+		Cons:             transformedInput.constraints,
+		Storage:          transformedInput.storageConstraints,
 		EndpointBindings: transformedInput.endpointBindings,
 		NumUnits:         &transformedInput.units,
 		Placement:        transformedInput.placement,
@@ -385,6 +381,8 @@ func (c applicationsClient) deployFromRepository(applicationAPIClient *apiapplic
 // before 3.3.
 func (c applicationsClient) legacyDeploy(ctx context.Context, conn api.Connection, applicationAPIClient *apiapplication.Client, transformedInput transformedCreateApplicationInput) error {
 	// Version needed for operating system selection.
+	c.Tracef("Calling legacyDeploy")
+
 	c.controllerVersion, _ = conn.ServerVersion()
 
 	charmsAPIClient := apicharms.NewClient(conn)
@@ -514,10 +512,12 @@ func (c applicationsClient) legacyDeploy(ctx context.Context, conn api.Connectio
 				CharmOrigin:      resultOrigin,
 				Config:           appConfig,
 				Cons:             transformedInput.constraints,
+				Storage:          transformedInput.storageConstraints,
 				Resources:        resources,
 				Placement:        transformedInput.placement,
 				EndpointBindings: transformedInput.endpointBindings,
 			}
+			c.Tracef(" *************** Debugging input", map[string]interface{}{"input": transformedInput})
 			c.Tracef("Calling Deploy", map[string]interface{}{"args": args})
 			if err = applicationAPIClient.Deploy(args); err != nil {
 				return typedError(err)

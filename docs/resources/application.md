@@ -13,41 +13,86 @@ A resource that represents a single Juju application deployment from a charm. De
 ## Example Usage
 
 ```terraform
-resource "juju_application" "this" {
-  name = "my-application"
+# resource "juju_application" "this" {
+#   name = "my-application"
 
-  model = juju_model.development.name
+#   model = juju_model.development.name
 
-  charm {
-    name     = "hello-kubecon"
-    channel  = "edge"
-    revision = 14
-    series   = "trusty"
-  }
+#   charm {
+#     name     = "hello-kubecon"
+#     channel  = "edge"
+#     revision = 14
+#     series   = "trusty"
+#   }
 
-  units = 3
+#   units = 3
 
-  config = {
-    external-hostname = "..."
+#   config = {
+#     external-hostname = "..."
+#   }
+# }
+
+# resource "juju_application" "placement_example" {
+#   name  = "placement-example"
+#   model = juju_model.development.name
+#   charm {
+#     name     = "hello-kubecon"
+#     channel  = "edge"
+#     revision = 14
+#     series   = "trusty"
+#   }
+
+#   units     = 3
+#   placement = "0,1,2"
+
+#   config = {
+#     external-hostname = "..."
+#   }
+# }
+
+terraform {
+  required_providers {
+    juju = {
+      source  = "registry.terraform.io/juju/juju"
+      version = "0.12.0"
+    }
   }
 }
 
-resource "juju_application" "placement_example" {
-  name  = "placement-example"
-  model = juju_model.development.name
+provider "juju" {}
+
+locals {
+  juju_model_name = "jenkins"
+}
+
+/*
+Note: If deploying jenkins for the first time or redeploying (remove and redeploy),
+it's recommended to deploy with the juju CLI and specifying the home storage:
+
+  juju deploy jenkins-k8s --channel=latest/edge --storage jenkins-home=2GB
+
+Then import the deployed charm to terraform state. This is a workaround since the juju
+terraform provider has not yet support storage.
+*/
+resource "juju_application" "jenkins-k8s" {
+  name  = "jenkins-k8s"
+  model = local.juju_model_name
+
   charm {
-    name     = "hello-kubecon"
-    channel  = "edge"
-    revision = 14
-    series   = "trusty"
+    name     = "jenkins-k8s"
+    revision = 92
+    channel  = "latest/edge"
+    base     = "ubuntu@22.04" # required, otherwise will error: series "focal" not supported by charm
   }
 
-  units     = 3
-  placement = "0,1,2"
+  # 2GB of allocated memory will give jenkins 1GB of heap, change this if necessary.
+  constraints = "arch=amd64 mem=2048M"
 
-  config = {
-    external-hostname = "..."
+  storage_constraints = {
+    jenkins-home = 2048
   }
+
+  units = 1 # There cannot be more than 1 server unit.
 }
 ```
 
@@ -78,6 +123,7 @@ resource "juju_application" "placement_example" {
 		  latest revision.
 	    * If the charm revision or channel are not updated, then no changes will take 
 		  place (juju does not have an "un-attach" command for resources).
+- `storage_constraints` (Map of Number) Storage constraints to deploy with the application
 - `trust` (Boolean) Set the trust for the application.
 - `units` (Number) The number of application units to deploy for the charm.
 

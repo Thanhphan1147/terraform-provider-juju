@@ -29,6 +29,7 @@ import (
 	"github.com/juju/errors"
 
 	"github.com/juju/juju/core/constraints"
+	"github.com/juju/juju/storage"
 
 	"github.com/juju/terraform-provider-juju/internal/juju"
 )
@@ -169,9 +170,8 @@ func (r *applicationResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"storage_constraints": schema.MapAttribute{
 				Description: "Storage constraints to deploy with the application",
 				Optional:    true,
-				// Default storage constraints is 1G for each defined juju storage
 				Computed:    true,
-				ElementType: types.StringType,
+				ElementType: types.Int64Type,
 				PlanModifiers: []planmodifier.Map{
 					mapplanmodifier.RequiresReplaceIfConfigured(),
 					mapplanmodifier.UseStateForUnknown(),
@@ -462,6 +462,20 @@ func (r *applicationResource) Create(ctx context.Context, req resource.CreateReq
 		}
 	}
 
+	storageConstraintsSizegMap := make(map[string]uint64)
+	resp.Diagnostics.Append(plan.StorageConstraints.ElementsAs(ctx, &storageConstraintsSizegMap, false)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	storageConstraintsMap := make(map[string]storage.Constraints)
+	for storageName, storageContraintsSize := range storageConstraintsSizegMap {
+		storageConstraints := storage.Constraints{
+			Pool:  "",
+			Size:  storageContraintsSize,
+			Count: 1,
+		}
+		storageConstraintsMap[storageName] = storageConstraints
+	}
 	// Parse endpoint bindings
 	var endpointBindings map[string]string
 	if !plan.EndpointBindings.IsNull() {
@@ -479,25 +493,26 @@ func (r *applicationResource) Create(ctx context.Context, req resource.CreateReq
 			}
 		}
 	}
-
 	modelName := plan.ModelName.ValueString()
+	resp.Diagnostics.AddWarning("Debug application", fmt.Sprintf("storage constraints parsed from tf config %+x", storageConstraintsMap))
 	createResp, err := r.client.Applications.CreateApplication(ctx,
 		&juju.CreateApplicationInput{
-			ApplicationName:  plan.ApplicationName.ValueString(),
-			ModelName:        modelName,
-			CharmName:        charmName,
-			CharmChannel:     channel,
-			CharmRevision:    revision,
-			CharmBase:        planCharm.Base.ValueString(),
-			CharmSeries:      planCharm.Series.ValueString(),
-			Units:            int(plan.UnitCount.ValueInt64()),
-			Config:           configField,
-			Constraints:      parsedConstraints,
-			Trust:            plan.Trust.ValueBool(),
-			Expose:           expose,
-			Placement:        plan.Placement.ValueString(),
-			EndpointBindings: endpointBindings,
-			Resources:        resourceRevisions,
+			ApplicationName:    plan.ApplicationName.ValueString(),
+			ModelName:          modelName,
+			CharmName:          charmName,
+			CharmChannel:       channel,
+			CharmRevision:      revision,
+			CharmBase:          planCharm.Base.ValueString(),
+			CharmSeries:        planCharm.Series.ValueString(),
+			Units:              int(plan.UnitCount.ValueInt64()),
+			Config:             configField,
+			Constraints:        parsedConstraints,
+			StorageConstraints: storageConstraintsMap,
+			Trust:              plan.Trust.ValueBool(),
+			Expose:             expose,
+			Placement:          plan.Placement.ValueString(),
+			EndpointBindings:   endpointBindings,
+			Resources:          resourceRevisions,
 		},
 	)
 	if err != nil {
